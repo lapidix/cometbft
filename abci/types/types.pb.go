@@ -1480,7 +1480,8 @@ type RequestFinalizeBlock struct {
 	Time               time.Time `protobuf:"bytes,6,opt,name=time,proto3,stdtime" json:"time"`
 	NextValidatorsHash []byte    `protobuf:"bytes,7,opt,name=next_validators_hash,json=nextValidatorsHash,proto3" json:"next_validators_hash,omitempty"`
 	// proposer_address is the address of the public key of the original proposer of the block.
-	ProposerAddress []byte `protobuf:"bytes,8,opt,name=proposer_address,json=proposerAddress,proto3" json:"proposer_address,omitempty"`
+	ProposerAddress []byte    `protobuf:"bytes,8,opt,name=proposer_address,json=proposerAddress,proto3" json:"proposer_address,omitempty"`
+	DelayedCommits  CommitInfo `protobuf:"bytes,9,opt,name=delayed_commits,json=delayedCommits,proto3" json:"delayed_commits"`
 }
 
 func (m *RequestFinalizeBlock) Reset()         { *m = RequestFinalizeBlock{} }
@@ -1570,6 +1571,13 @@ func (m *RequestFinalizeBlock) GetProposerAddress() []byte {
 		return m.ProposerAddress
 	}
 	return nil
+}
+
+func (m *RequestFinalizeBlock) GetDelayedCommits() CommitInfo {
+	if m != nil {
+		return m.DelayedCommits
+	}
+	return CommitInfo{}
 }
 
 type Response struct {
@@ -5632,6 +5640,16 @@ func (m *RequestFinalizeBlock) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	{
+		size, err := m.DelayedCommits.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTypes(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x4a
 	if len(m.ProposerAddress) > 0 {
 		i -= len(m.ProposerAddress)
 		copy(dAtA[i:], m.ProposerAddress)
@@ -8001,6 +8019,8 @@ func (m *RequestFinalizeBlock) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovTypes(uint64(l))
 	}
+	l = m.DelayedCommits.Size()
+	n += 1 + l + sovTypes(uint64(l))
 	return n
 }
 
@@ -12004,6 +12024,39 @@ func (m *RequestFinalizeBlock) Unmarshal(dAtA []byte) error {
 			m.ProposerAddress = append(m.ProposerAddress[:0], dAtA[iNdEx:postIndex]...)
 			if m.ProposerAddress == nil {
 				m.ProposerAddress = []byte{}
+			}
+			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DelayedCommits", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.DelayedCommits.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
 			}
 			iNdEx = postIndex
 		default:
