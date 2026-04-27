@@ -1789,6 +1789,10 @@ func (cs *State) finalizeCommit(height int64) {
 	// Create a copy of the state for staging and an event cache for txs.
 	stateCopy := cs.state.Copy()
 
+	// Pass delayed precommits from the PREVIOUS height to block executor
+	// for inclusion in FinalizeBlock's delayed_commits field
+	cs.blockExec.SetDelayedPrecommits(cs.DelayedPrecommits)
+
 	// Execute and commit the block, update and save the state, and update the mempool.
 	// We use apply verified block here because we have verified the block in this function already.
 	// NOTE The block.AppHash won't reflect these txs until the next block.

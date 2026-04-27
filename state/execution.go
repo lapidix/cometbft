@@ -43,6 +43,10 @@ type BlockExecutor struct {
 	logger log.Logger
 
 	metrics *Metrics
+
+	// delayedPrecommits holds late-arriving precommit votes from the previous height.
+	// Set by consensus state before calling ApplyVerifiedBlock.
+	delayedPrecommits *types.VoteSet
 }
 
 type BlockExecutorOption func(executor *BlockExecutor)
@@ -90,6 +94,12 @@ func (blockExec *BlockExecutor) Store() Store {
 // If not called, it defaults to types.NopEventBus.
 func (blockExec *BlockExecutor) SetEventBus(eventBus types.BlockEventPublisher) {
 	blockExec.eventBus = eventBus
+}
+
+// SetDelayedPrecommits sets the delayed precommit votes to be included
+// in the next FinalizeBlock request's delayed_commits field.
+func (blockExec *BlockExecutor) SetDelayedPrecommits(votes *types.VoteSet) {
+	blockExec.delayedPrecommits = votes
 }
 
 // CreateProposalBlock calls state.MakeBlock with evidence from the evpool
@@ -231,6 +241,7 @@ func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, b
 		Height:             block.Height,
 		Time:               block.Time,
 		DecidedLastCommit:  buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
+		DelayedCommits:     blockExec.buildDelayedCommits(block, state),
 		Misbehavior:        block.Evidence.Evidence.ToABCI(),
 		Txs:                block.Txs.ToSliceOfBytes(),
 	})
@@ -484,6 +495,50 @@ func BuildLastCommitInfo(block *types.Block, lastValSet *types.ValidatorSet, ini
 		Round: block.LastCommit.Round,
 		Votes: votes,
 	}
+}
+
+// BuildDelayedCommitInfo constructs a CommitInfo from the delayed precommit votes
+// that arrived after the commit timeout for a previous height.
+func BuildDelayedCommitInfo(delayedVotes *types.VoteSet, lastValSet *types.ValidatorSet) abci.CommitInfo {
+	if delayedVotes == nil || lastValSet == nil {
+		return abci.CommitInfo{}
+	}
+
+	votes := make([]abci.VoteInfo, len(lastValSet.Validators))
+	for i, val := range lastValSet.Validators {
+		blockIDFlag := cmtproto.BlockIDFlagAbsent
+		if vote := delayedVotes.GetByAddress(val.Address); vote != nil {
+			if vote.BlockID.IsComplete() {
+				blockIDFlag = cmtproto.BlockIDFlagCommit
+			} else {
+				blockIDFlag = cmtproto.BlockIDFlagNil
+			}
+		}
+		votes[i] = abci.VoteInfo{
+			Validator:   types.TM2PB.Validator(val),
+			BlockIdFlag: blockIDFlag,
+		}
+	}
+
+	return abci.CommitInfo{
+		Round: delayedVotes.GetRound(),
+		Votes: votes,
+	}
+}
+
+func (blockExec *BlockExecutor) buildDelayedCommits(block *types.Block, state State) abci.CommitInfo {
+	if blockExec.delayedPrecommits == nil {
+		return abci.CommitInfo{}
+	}
+	delayedHeight := blockExec.delayedPrecommits.GetHeight()
+	if delayedHeight <= 0 {
+		return abci.CommitInfo{}
+	}
+	valSet, err := blockExec.store.LoadValidators(delayedHeight)
+	if err != nil || valSet == nil {
+		return abci.CommitInfo{}
+	}
+	return BuildDelayedCommitInfo(blockExec.delayedPrecommits, valSet)
 }
 
 // buildExtendedCommitInfoFromStore populates an ABCI extended commit from the
