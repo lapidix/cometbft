@@ -145,6 +145,11 @@ type State struct {
 
 	// offline state sync height indicating to which height the node synced offline
 	offlineStateSyncHeight int64
+
+	// DelayedPrecommits stores precommit votes for the previous height that arrived
+	// after RoundStepNewHeight ended. Used to build delayed_commits for the next
+	// FinalizeBlock call, enabling deferred slashing evaluation.
+	DelayedPrecommits *types.VoteSet
 }
 
 // StateOption sets an optional parameter on the State.
@@ -707,6 +712,21 @@ func (cs *State) updateToState(state sm.State) {
 			"last commit cannot be empty after initial block (H:%d)",
 			state.LastBlockHeight+1,
 		))
+	}
+
+	// Initialize DelayedPrecommits buffer to collect late-arriving votes
+	// for the height we just committed. These will be used in the next
+	// block's FinalizeBlock as delayed_commits.
+	if state.LastBlockHeight > 0 && cs.CommitRound > -1 {
+		cs.DelayedPrecommits = types.NewVoteSet(
+			state.ChainID,
+			state.LastBlockHeight,
+			cs.CommitRound,
+			cmtproto.PrecommitType,
+			state.LastValidators,
+		)
+	} else {
+		cs.DelayedPrecommits = nil
 	}
 
 	// Next desired block height
@@ -2136,8 +2156,19 @@ func (cs *State) addVote(vote *types.Vote, peerID p2p.ID) (added bool, err error
 	// These come in while we wait timeoutCommit
 	if vote.Height+1 == cs.Height && vote.Type == cmtproto.PrecommitType {
 		if cs.Step != cstypes.RoundStepNewHeight {
-			// Late precommit at prior height is ignored
-			cs.Logger.Debug("precommit vote came in after commit timeout and has been ignored", "vote", vote)
+			// Late precommit at prior height - collect in DelayedPrecommits buffer
+			// instead of ignoring, for deferred slashing evaluation
+			if cs.DelayedPrecommits != nil {
+				added, err = cs.DelayedPrecommits.AddVote(vote)
+				if added {
+					cs.Logger.Debug("added late precommit to delayed buffer",
+						"vote_height", vote.Height,
+						"current_height", cs.Height,
+						"delayed_count", cs.DelayedPrecommits.Size())
+				}
+			} else {
+				cs.Logger.Debug("precommit vote came in after commit timeout and has been ignored", "vote", vote)
+			}
 			return added, err
 		}
 
