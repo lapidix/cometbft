@@ -135,7 +135,14 @@ func (blockExec *BlockExecutor) CreateProposalBlock(
 
 	txs := blockExec.mempool.ReapMaxBytesMaxGas(maxReapBytes, maxGas)
 	commit := lastExtCommit.ToCommit()
-	block, err := state.MakeBlock(height, txs, commit, evidence, proposerAddr, nil)
+
+	// Build delayed last commit from collected late precommits
+	var delayedLastCommit *types.Commit
+	if blockExec.delayedPrecommits != nil && blockExec.delayedPrecommits.Size() > 0 {
+		delayedLastCommit = blockExec.delayedPrecommits.MakeDelayedCommit()
+	}
+
+	block, err := state.MakeBlock(height, txs, commit, evidence, proposerAddr, delayedLastCommit)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +176,7 @@ func (blockExec *BlockExecutor) CreateProposalBlock(
 		return nil, err
 	}
 
-	return state.MakeBlock(height, txl, commit, evidence, proposerAddr, nil)
+	return state.MakeBlock(height, txl, commit, evidence, proposerAddr, delayedLastCommit)
 }
 
 func (blockExec *BlockExecutor) ProcessProposal(
@@ -241,7 +248,7 @@ func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, b
 		Height:             block.Height,
 		Time:               block.Time,
 		DecidedLastCommit:  buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
-		DelayedCommits:     blockExec.buildDelayedCommits(block, state),
+		DelayedCommits:     buildDelayedCommitInfoFromBlock(block, blockExec.store),
 		Misbehavior:        block.Evidence.Evidence.ToABCI(),
 		Txs:                block.Txs.ToSliceOfBytes(),
 	})
@@ -497,48 +504,44 @@ func BuildLastCommitInfo(block *types.Block, lastValSet *types.ValidatorSet, ini
 	}
 }
 
-// BuildDelayedCommitInfo constructs a CommitInfo from the delayed precommit votes
-// that arrived after the commit timeout for a previous height.
-func BuildDelayedCommitInfo(delayedVotes *types.VoteSet, lastValSet *types.ValidatorSet) abci.CommitInfo {
-	if delayedVotes == nil || lastValSet == nil {
+// buildDelayedCommitInfoFromBlock constructs a CommitInfo from the block's
+// DelayedLastCommit field. This is deterministic because the data comes from
+// the block, which all nodes agree on.
+func buildDelayedCommitInfoFromBlock(block *types.Block, store Store) abci.CommitInfo {
+	if block.DelayedLastCommit == nil || len(block.DelayedLastCommit.Signatures) == 0 {
 		return abci.CommitInfo{}
 	}
 
-	votes := make([]abci.VoteInfo, len(lastValSet.Validators))
-	for i, val := range lastValSet.Validators {
-		blockIDFlag := cmtproto.BlockIDFlagAbsent
-		if vote := delayedVotes.GetByAddress(val.Address); vote != nil {
-			if vote.BlockID.IsComplete() {
-				blockIDFlag = cmtproto.BlockIDFlagCommit
-			} else {
-				blockIDFlag = cmtproto.BlockIDFlagNil
-			}
-		}
+	delayedHeight := block.DelayedLastCommit.Height
+	if delayedHeight <= 0 {
+		return abci.CommitInfo{}
+	}
+
+	valSet, err := store.LoadValidators(delayedHeight)
+	if err != nil || valSet == nil {
+		return abci.CommitInfo{}
+	}
+
+	commitSize := len(block.DelayedLastCommit.Signatures)
+	valSetLen := len(valSet.Validators)
+	if commitSize != valSetLen {
+		// Mismatch — return empty rather than panic for delayed commits
+		return abci.CommitInfo{}
+	}
+
+	votes := make([]abci.VoteInfo, commitSize)
+	for i, val := range valSet.Validators {
+		commitSig := block.DelayedLastCommit.Signatures[i]
 		votes[i] = abci.VoteInfo{
 			Validator:   types.TM2PB.Validator(val),
-			BlockIdFlag: blockIDFlag,
+			BlockIdFlag: cmtproto.BlockIDFlag(commitSig.BlockIDFlag),
 		}
 	}
 
 	return abci.CommitInfo{
-		Round: delayedVotes.GetRound(),
+		Round: block.DelayedLastCommit.Round,
 		Votes: votes,
 	}
-}
-
-func (blockExec *BlockExecutor) buildDelayedCommits(block *types.Block, state State) abci.CommitInfo {
-	if blockExec.delayedPrecommits == nil {
-		return abci.CommitInfo{}
-	}
-	delayedHeight := blockExec.delayedPrecommits.GetHeight()
-	if delayedHeight <= 0 {
-		return abci.CommitInfo{}
-	}
-	valSet, err := blockExec.store.LoadValidators(delayedHeight)
-	if err != nil || valSet == nil {
-		return abci.CommitInfo{}
-	}
-	return BuildDelayedCommitInfo(blockExec.delayedPrecommits, valSet)
 }
 
 // buildExtendedCommitInfoFromStore populates an ABCI extended commit from the

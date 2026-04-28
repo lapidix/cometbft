@@ -712,6 +712,40 @@ func (vs *blockVotes) getByIndex(index int32) *Vote {
 
 //--------------------------------------------------------------------------------
 
+// MakeDelayedCommit creates a Commit from a VoteSet without requiring a 2/3 majority.
+// This is used for delayed precommit votes that arrived after the commit timeout.
+// Only votes that are present in the VoteSet are included; absent validators get
+// an absent CommitSig.
+func (voteSet *VoteSet) MakeDelayedCommit() *Commit {
+	if voteSet == nil {
+		return nil
+	}
+	voteSet.mtx.Lock()
+	defer voteSet.mtx.Unlock()
+
+	sigs := make([]CommitSig, len(voteSet.votes))
+	for i, v := range voteSet.votes {
+		if v == nil {
+			sigs[i] = NewCommitSigAbsent()
+		} else {
+			sigs[i] = v.CommitSig()
+		}
+	}
+
+	// Use the voteSet's blockID if a majority exists, otherwise use zero BlockID
+	blockID := BlockID{}
+	if voteSet.maj23 != nil {
+		blockID = *voteSet.maj23
+	}
+
+	return &Commit{
+		Height:     voteSet.height,
+		Round:      voteSet.round,
+		BlockID:    blockID,
+		Signatures: sigs,
+	}
+}
+
 // Common interface between *consensus.VoteSet and types.Commit
 type VoteSetReader interface {
 	GetHeight() int64
