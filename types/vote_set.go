@@ -723,6 +723,26 @@ func (voteSet *VoteSet) MakeDelayedCommit() *Commit {
 	voteSet.mtx.Lock()
 	defer voteSet.mtx.Unlock()
 
+	// Check if there are any actual votes. If none, return nil.
+	hasVotes := false
+	blockID := BlockID{}
+	for _, v := range voteSet.votes {
+		if v != nil {
+			hasVotes = true
+			if v.BlockID.IsComplete() {
+				blockID = v.BlockID
+			}
+		}
+	}
+	if !hasVotes {
+		return nil
+	}
+
+	// Use maj23 BlockID if available
+	if voteSet.maj23 != nil {
+		blockID = *voteSet.maj23
+	}
+
 	sigs := make([]CommitSig, len(voteSet.votes))
 	for i, v := range voteSet.votes {
 		if v == nil {
@@ -730,12 +750,6 @@ func (voteSet *VoteSet) MakeDelayedCommit() *Commit {
 		} else {
 			sigs[i] = v.CommitSig()
 		}
-	}
-
-	// Use the voteSet's blockID if a majority exists, otherwise use zero BlockID
-	blockID := BlockID{}
-	if voteSet.maj23 != nil {
-		blockID = *voteSet.maj23
 	}
 
 	return &Commit{
