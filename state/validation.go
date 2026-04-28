@@ -95,6 +95,17 @@ func validateBlock(state State, block *types.Block) error {
 		}
 	}
 
+	// Validate DelayedLastCommit if present.
+	if block.DelayedLastCommit != nil && len(block.DelayedLastCommit.Signatures) > 0 {
+		if block.Height <= state.InitialHeight+1 {
+			return errors.New("DelayedLastCommit not expected at initial heights")
+		}
+		if block.DelayedLastCommit.Height >= block.Height-1 {
+			return fmt.Errorf("DelayedLastCommit height %d must be less than block height - 1 (%d)",
+				block.DelayedLastCommit.Height, block.Height-1)
+		}
+	}
+
 	// NOTE: We can't actually verify it's the right proposer because we don't
 	// know what round the block was first proposed. So just check that it's
 	// a legit address and a known validator.

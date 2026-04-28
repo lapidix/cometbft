@@ -46,8 +46,9 @@ type Block struct {
 	verifiedHash cmtbytes.HexBytes // Verified block hash (not included in the struct hash)
 	Header       `json:"header"`
 	Data         `json:"data"`
-	Evidence     EvidenceData `json:"evidence"`
-	LastCommit   *Commit      `json:"last_commit"`
+	Evidence          EvidenceData `json:"evidence"`
+	LastCommit        *Commit      `json:"last_commit"`
+	DelayedLastCommit *Commit      `json:"delayed_last_commit"`
 }
 
 // ValidateBasic performs basic validation that doesn't involve state data.
@@ -78,6 +79,12 @@ func (b *Block) ValidateBasic() error {
 			b.LastCommit.Hash(),
 			b.LastCommitHash,
 		)
+	}
+
+	if b.DelayedLastCommit != nil {
+		if err := b.DelayedLastCommit.ValidateBasic(); err != nil {
+			return fmt.Errorf("wrong DelayedLastCommit: %v", err)
+		}
 	}
 
 	// NOTE: b.Data.Txs may be nil, but b.Data.Hash() still works fine.
@@ -206,11 +213,13 @@ func (b *Block) StringIndented(indent string) string {
 %s  %v
 %s  %v
 %s  %v
+%s  %v
 %s}#%v`,
 		indent, b.Header.StringIndented(indent+"  "),
 		indent, b.Data.StringIndented(indent+"  "),
 		indent, b.Evidence.StringIndented(indent+"  "),
 		indent, b.LastCommit.StringIndented(indent+"  "),
+		indent, b.DelayedLastCommit.StringIndented(indent+"  "),
 		indent, b.Hash())
 }
 
@@ -233,6 +242,10 @@ func (b *Block) ToProto() (*cmtproto.Block, error) {
 	pb.Header = *b.Header.ToProto()
 	pb.LastCommit = b.LastCommit.ToProto()
 	pb.Data = b.Data.ToProto()
+
+	if b.DelayedLastCommit != nil {
+		pb.DelayedLastCommit = b.DelayedLastCommit.ToProto()
+	}
 
 	protoEvidence, err := b.Evidence.ToProto()
 	if err != nil {
@@ -271,6 +284,14 @@ func BlockFromProto(bp *cmtproto.Block) (*Block, error) {
 			return nil, err
 		}
 		b.LastCommit = lc
+	}
+
+	if bp.DelayedLastCommit != nil {
+		dlc, err := CommitFromProto(bp.DelayedLastCommit)
+		if err != nil {
+			return nil, err
+		}
+		b.DelayedLastCommit = dlc
 	}
 
 	return b, b.ValidateBasic()

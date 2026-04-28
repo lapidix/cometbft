@@ -138,7 +138,7 @@ func newReactor(
 
 		lastExtCommit := seenExtCommit.Clone()
 
-		thisBlock, err := state.MakeBlock(blockHeight, nil, lastExtCommit.ToCommit(), nil, state.Validators.Proposer.Address)
+		thisBlock, err := state.MakeBlock(blockHeight, nil, lastExtCommit.ToCommit(), nil, state.Validators.Proposer.Address, nil)
 		require.NoError(t, err)
 
 		thisParts, err := thisBlock.MakePartSet(types.BlockPartSizeBytes)

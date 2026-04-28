@@ -413,7 +413,7 @@ func initializeBlockStore(db dbm.DB, state sm.State, valAddr []byte) (*store.Blo
 
 	for i := int64(1); i <= state.LastBlockHeight; i++ {
 		lastCommit := makeExtCommit(i-1, valAddr)
-		block, err := state.MakeBlock(i, test.MakeNTxs(i, 1), lastCommit.ToCommit(), nil, state.Validators.Proposer.Address)
+		block, err := state.MakeBlock(i, test.MakeNTxs(i, 1), lastCommit.ToCommit(), nil, state.Validators.Proposer.Address, nil)
 		if err != nil {
 			return nil, err
 		}

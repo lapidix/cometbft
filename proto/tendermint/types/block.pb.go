@@ -24,10 +24,11 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type Block struct {
-	Header     Header       `protobuf:"bytes,1,opt,name=header,proto3" json:"header"`
-	Data       Data         `protobuf:"bytes,2,opt,name=data,proto3" json:"data"`
-	Evidence   EvidenceList `protobuf:"bytes,3,opt,name=evidence,proto3" json:"evidence"`
-	LastCommit *Commit      `protobuf:"bytes,4,opt,name=last_commit,json=lastCommit,proto3" json:"last_commit,omitempty"`
+	Header             Header       `protobuf:"bytes,1,opt,name=header,proto3" json:"header"`
+	Data               Data         `protobuf:"bytes,2,opt,name=data,proto3" json:"data"`
+	Evidence           EvidenceList `protobuf:"bytes,3,opt,name=evidence,proto3" json:"evidence"`
+	LastCommit         *Commit      `protobuf:"bytes,4,opt,name=last_commit,json=lastCommit,proto3" json:"last_commit,omitempty"`
+	DelayedLastCommit  *Commit      `protobuf:"bytes,5,opt,name=delayed_last_commit,json=delayedLastCommit,proto3" json:"delayed_last_commit,omitempty"`
 }
 
 func (m *Block) Reset()         { *m = Block{} }
@@ -91,6 +92,13 @@ func (m *Block) GetLastCommit() *Commit {
 	return nil
 }
 
+func (m *Block) GetDelayedLastCommit() *Commit {
+	if m != nil {
+		return m.DelayedLastCommit
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*Block)(nil), "tendermint.types.Block")
 }
@@ -138,6 +146,18 @@ func (m *Block) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.DelayedLastCommit != nil {
+		{
+			size, err := m.DelayedLastCommit.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintBlock(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
 	if m.LastCommit != nil {
 		{
 			size, err := m.LastCommit.MarshalToSizedBuffer(dAtA[:i])
@@ -208,6 +228,10 @@ func (m *Block) Size() (n int) {
 	n += 1 + l + sovBlock(uint64(l))
 	if m.LastCommit != nil {
 		l = m.LastCommit.Size()
+		n += 1 + l + sovBlock(uint64(l))
+	}
+	if m.DelayedLastCommit != nil {
+		l = m.DelayedLastCommit.Size()
 		n += 1 + l + sovBlock(uint64(l))
 	}
 	return n
@@ -380,6 +404,42 @@ func (m *Block) Unmarshal(dAtA []byte) error {
 				m.LastCommit = &Commit{}
 			}
 			if err := m.LastCommit.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DelayedLastCommit", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowBlock
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthBlock
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthBlock
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.DelayedLastCommit == nil {
+				m.DelayedLastCommit = &Commit{}
+			}
+			if err := m.DelayedLastCommit.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
